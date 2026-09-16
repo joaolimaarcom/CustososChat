@@ -21,6 +21,10 @@
   const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
   const FESTIVE_STICKERS = ["🎉", "🥳", "🎊"];
   const CONFETTI_COLORS = ["#6366f1", "#a855f7", "#f43f5e", "#f59e0b", "#10b981", "#0ea5e9"];
+  const CONFETTI_KEYWORDS = ["parabens", "feliz aniversario", "aniversario"];
+  const HEARTS_KEYWORDS = ["te amo", "amo voce", "amo vc"];
+  const STREAK_STORAGE = "custosochat-streak";
+  const NOTIF_STORAGE = "custosochat-notif";
 
   // ---- DOM refs ----
   const nameInput = document.getElementById("name-input");
@@ -56,6 +60,9 @@
   const messageInput = document.getElementById("message-input");
   const sendBtn = document.getElementById("send-btn");
   const leaveBtn = document.getElementById("leave-btn");
+
+  const streakBadge = document.getElementById("streak-badge");
+  const notifToggleBtn = document.getElementById("notif-toggle-btn");
 
   const myAvatarBtn = document.getElementById("my-avatar-btn");
   const myAvatarImg = document.getElementById("my-avatar-img");
@@ -95,6 +102,7 @@
   let currentActionBar = null;
   let typingHideTimeout = null;
   let lastTypingSentAt = 0;
+  let notifEnabled = localStorage.getItem(NOTIF_STORAGE) !== "off";
 
   const messageRegistry = new Map();
 
@@ -112,6 +120,23 @@
     stickerPanel.classList.add("hidden");
   });
   stickerPanel.classList.add("stickers");
+
+  updateNotifBtn();
+  notifToggleBtn.addEventListener("click", () => {
+    notifEnabled = !notifEnabled;
+    localStorage.setItem(NOTIF_STORAGE, notifEnabled ? "on" : "off");
+    if (notifEnabled && "Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+    updateNotifBtn();
+  });
+
+  function updateNotifBtn() {
+    notifToggleBtn.textContent = notifEnabled ? "🔔" : "🔕";
+    notifToggleBtn.title = notifEnabled
+      ? "Notificações ativadas (clique pra silenciar)"
+      : "Notificações silenciadas (clique pra ativar)";
+  }
 
   function uid() {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -426,6 +451,7 @@
     messageInput.focus();
     addSystemMessage("Conectado! Diga oi 👋");
     conn.send({ type: "profile", name: myProfile.name, avatar: myProfile.avatar });
+    updateStreakBadge();
   }
 
   function setOnline(online) {
@@ -450,8 +476,10 @@
       const url = URL.createObjectURL(blob);
       if (meta.kind === "image") {
         addImageBubble(meta.id, peerProfile, url, false, meta.ts);
+        notifyIncoming("enviou uma foto");
       } else {
         addAudioBubble(meta.id, peerProfile, url, false, meta.ts);
+        notifyIncoming("enviou um áudio");
       }
       const entry = messageRegistry.get(meta.id);
       if (entry) entry.mediaUrl = url;
@@ -468,10 +496,13 @@
         break;
       case "message":
         addTextBubble(data.id, peerProfile, data.text, false, data.ts);
+        checkMessageEffects(data.text);
+        notifyIncoming(data.text);
         break;
       case "sticker":
         addStickerBubble(data.id, peerProfile, data.sticker, false, data.ts);
         if (FESTIVE_STICKERS.includes(data.sticker)) triggerConfetti();
+        notifyIncoming("enviou uma figurinha " + data.sticker);
         break;
       case "edit":
         applyEdit(data.id, data.text);
@@ -532,6 +563,7 @@
     const ts = Date.now();
     conn.send({ type: "message", id, text, ts });
     addTextBubble(id, myProfile, text, true, ts);
+    checkMessageEffects(text);
     messageInput.value = "";
   });
 
@@ -744,6 +776,109 @@
       piece.style.animationName = "confetti-fall";
       confettiLayer.appendChild(piece);
       piece.addEventListener("animationend", () => piece.remove());
+    }
+  }
+
+  function triggerHearts() {
+    const count = 20;
+    for (let i = 0; i < count; i++) {
+      const piece = document.createElement("div");
+      piece.className = "heart-piece";
+      piece.textContent = "❤️";
+      piece.style.left = Math.random() * 100 + "vw";
+      piece.style.fontSize = 16 + Math.random() * 16 + "px";
+      piece.style.animationDuration = (2 + Math.random() * 1.5) + "s";
+      piece.style.animationDelay = (Math.random() * 0.4) + "s";
+      confettiLayer.appendChild(piece);
+      piece.addEventListener("animationend", () => piece.remove());
+    }
+  }
+
+  function normalizeText(text) {
+    return text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "");
+  }
+
+  function checkMessageEffects(text) {
+    const normalized = normalizeText(text);
+    if (CONFETTI_KEYWORDS.some((k) => normalized.includes(k))) {
+      triggerConfetti();
+    } else if (HEARTS_KEYWORDS.some((k) => normalized.includes(k))) {
+      triggerHearts();
+    }
+  }
+
+  // ---- Streak ----
+  function bumpStreak() {
+    const today = new Date().toISOString().slice(0, 10);
+    let data;
+    try {
+      data = JSON.parse(localStorage.getItem(STREAK_STORAGE)) || {};
+    } catch (e) {
+      data = {};
+    }
+    if (data.lastActiveDate === today) {
+      return data.streak || 1;
+    }
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    data.streak = data.lastActiveDate === yesterday ? (data.streak || 1) + 1 : 1;
+    data.lastActiveDate = today;
+    localStorage.setItem(STREAK_STORAGE, JSON.stringify(data));
+    return data.streak;
+  }
+
+  function updateStreakBadge() {
+    const streak = bumpStreak();
+    if (streak > 1) {
+      streakBadge.textContent = "🔥 " + streak;
+      streakBadge.title = "Vocês trocaram mensagem em " + streak + " dias seguidos";
+      streakBadge.classList.remove("hidden");
+    } else {
+      streakBadge.classList.add("hidden");
+    }
+  }
+
+  // ---- Notifications ----
+  function playPing() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.25);
+      osc.onended = () => ctx.close();
+    } catch (e) {
+      // Web Audio unavailable — skip the sound
+    }
+  }
+
+  function showBrowserNotification(title, body) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    try {
+      const n = new Notification(title, { body, icon: peerProfile ? peerProfile.avatar : undefined });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    } catch (e) {
+      // Notification constructor unsupported in this context — skip
+    }
+  }
+
+  function notifyIncoming(preview) {
+    if (!notifEnabled) return;
+    playPing();
+    if (document.hidden || !document.hasFocus()) {
+      showBrowserNotification(peerProfile ? peerProfile.name : "Nova mensagem", preview);
     }
   }
 

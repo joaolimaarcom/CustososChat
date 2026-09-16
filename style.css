@@ -335,6 +335,30 @@ button.primary:disabled {
   gap: 10px;
 }
 
+.streak-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+
+.notif-btn {
+  border: none;
+  background: transparent;
+  font-size: 1.05rem;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 50%;
+  line-height: 1;
+}
+
+.notif-btn:hover {
+  background: var(--bg);
+}
+
 .connection-status {
   font-size: 0.75rem;
 }
@@ -373,6 +397,21 @@ button.primary:disabled {
 @keyframes confetti-fall {
   0% { transform: translateY(0) rotate(0deg); opacity: 1; }
   100% { transform: translateY(105vh) rotate(540deg); opacity: 0.9; }
+}
+
+.heart-piece {
+  position: fixed;
+  bottom: -24px;
+  z-index: 30;
+  pointer-events: none;
+  animation-name: heart-float;
+  animation-timing-function: ease-in;
+  animation-fill-mode: forwards;
+}
+
+@keyframes heart-float {
+  0% { transform: translateY(0) scale(0.8); opacity: 0.95; }
+  100% { transform: translateY(-105vh) scale(1.15); opacity: 0; }
 }
 
 #leave-btn {
