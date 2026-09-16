@@ -80,6 +80,13 @@
   const emojiPanel = document.getElementById("emoji-panel");
   const stickerPanel = document.getElementById("sticker-panel");
 
+  const gameToggleBtn = document.getElementById("game-toggle-btn");
+  const gameModal = document.getElementById("game-modal");
+  const gameCloseBtn = document.getElementById("game-close-btn");
+  const gameRestartBtn = document.getElementById("game-restart-btn");
+  const gameStatus = document.getElementById("game-status");
+  const gameBoard = document.getElementById("game-board");
+
   const imageBtn = document.getElementById("image-btn");
   const imageInput = document.getElementById("image-input");
 
@@ -94,7 +101,9 @@
   let peer = null;
   let conn = null;
   let roomCode = "";
+  let amHost = false;
   let peerProfile = null;
+  let game = null;
   let pendingMediaMeta = null;
   let pendingAvatarDataUrl = null;
   let editPendingAvatarDataUrl = null;
@@ -364,6 +373,7 @@
 
     p.on("open", () => {
       peer = p;
+      amHost = true;
       roomCode = code;
       roomCodeDisplay.textContent = code;
       roomCodeBox.classList.remove("hidden");
@@ -462,9 +472,12 @@
       clearTimeout(typingHideTimeout);
       typingIndicator.classList.add("hidden");
     }
-    [messageInput, sendBtn, emojiToggleBtn, stickerToggleBtn, imageBtn, micBtn].forEach((el) => {
+    [messageInput, sendBtn, emojiToggleBtn, stickerToggleBtn, gameToggleBtn, imageBtn, micBtn].forEach((el) => {
       el.disabled = !online;
     });
+    if (!online) {
+      gameModal.classList.add("hidden");
+    }
   }
 
   // ---- Incoming data ----
@@ -524,6 +537,12 @@
         break;
       case "media-meta":
         pendingMediaMeta = data;
+        break;
+      case "game-start":
+        startGame(false);
+        break;
+      case "game-move":
+        playMove(data.index, false);
         break;
     }
   }
@@ -881,6 +900,79 @@
       showBrowserNotification(peerProfile ? peerProfile.name : "Nova mensagem", preview);
     }
   }
+
+  // ---- Jogo da velha (tic-tac-toe) ----
+  const WIN_LINES = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6]
+  ];
+
+  const gameCells = [];
+  for (let i = 0; i < 9; i++) {
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "game-cell";
+    cell.addEventListener("click", () => onCellClick(i));
+    gameBoard.appendChild(cell);
+    gameCells.push(cell);
+  }
+
+  function checkWinner(board) {
+    for (const [a, b, c] of WIN_LINES) {
+      if (board[a] && board[a] === board[b] && board[a] === board[c]) return board[a];
+    }
+    return board.every((c) => c) ? "draw" : null;
+  }
+
+  function startGame(sendToPeer) {
+    game = {
+      board: Array(9).fill(null),
+      mySymbol: amHost ? "X" : "O",
+      turn: "X"
+    };
+    gameModal.classList.remove("hidden");
+    renderGame();
+    if (sendToPeer && conn && conn.open) conn.send({ type: "game-start" });
+  }
+
+  function onCellClick(index) {
+    if (!game || game.turn !== game.mySymbol) return;
+    playMove(index, true);
+  }
+
+  function playMove(index, sendToPeer) {
+    if (!game || game.board[index]) return;
+    game.board[index] = game.turn;
+    game.turn = game.turn === "X" ? "O" : "X";
+    renderGame();
+    if (sendToPeer && conn && conn.open) conn.send({ type: "game-move", index });
+  }
+
+  function renderGame() {
+    const winner = checkWinner(game.board);
+    gameCells.forEach((cell, i) => {
+      cell.textContent = game.board[i] || "";
+      cell.disabled = !!game.board[i] || !!winner || game.turn !== game.mySymbol;
+    });
+    const peerLabel = peerProfile ? peerProfile.name : "Seu amigo";
+    if (winner === "draw") {
+      gameStatus.textContent = "Empate!";
+    } else if (winner) {
+      if (winner === game.mySymbol) {
+        gameStatus.textContent = "Você venceu! 🎉";
+        triggerConfetti();
+      } else {
+        gameStatus.textContent = peerLabel + " venceu!";
+      }
+    } else {
+      gameStatus.textContent = game.turn === game.mySymbol ? "Sua vez" : peerLabel + " está jogando...";
+    }
+  }
+
+  gameToggleBtn.addEventListener("click", () => startGame(true));
+  gameRestartBtn.addEventListener("click", () => startGame(true));
+  gameCloseBtn.addEventListener("click", () => gameModal.classList.add("hidden"));
 
   // ---- Images (photos and GIFs picked from the device) ----
   imageBtn.addEventListener("click", () => imageInput.click());

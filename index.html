@@ -75,6 +75,18 @@
 
     <div id="confetti-layer" class="confetti-layer"></div>
 
+    <div id="game-modal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <div class="modal-header">
+          <strong>Jogo da velha</strong>
+          <button id="game-close-btn" type="button" title="Fechar">✕</button>
+        </div>
+        <p id="game-status" class="game-status"></p>
+        <div id="game-board" class="game-board"></div>
+        <button id="game-restart-btn" type="button" class="primary">Novo jogo</button>
+      </div>
+    </div>
+
     <div id="profile-edit-panel" class="popover-panel hidden">
       <button id="edit-avatar-pick-btn" type="button" class="avatar-btn" title="Trocar foto">
         <img id="edit-avatar-preview-img" class="avatar-img hidden" alt="Prévia da nova foto">
@@ -108,6 +120,7 @@
     <form id="message-form" class="message-form">
       <button id="emoji-toggle-btn" type="button" class="tool-btn" title="Emojis">🙂</button>
       <button id="sticker-toggle-btn" type="button" class="tool-btn" title="Figurinhas">✨</button>
+      <button id="game-toggle-btn" type="button" class="tool-btn" title="Jogo da velha">🎮</button>
       <button id="image-btn" type="button" class="tool-btn" title="Enviar foto ou GIF">📎</button>
       <input id="image-input" type="file" accept="image/*" class="hidden">
       <button id="mic-btn" type="button" class="tool-btn" title="Gravar áudio">🎤</button>
