@@ -2,6 +2,9 @@
   const ROOM_PREFIX = "custosochat-";
   const MAX_RECORDING_MS = 120000;
   const MAX_GIF_BYTES = 6 * 1024 * 1024;
+  const TENOR_KEY_STORAGE = "custosochat-tenor-key";
+  const TENOR_API_BASE = "https://tenor.googleapis.com/v2";
+  const TENOR_CLIENT_KEY = "custosochat_app";
 
   const EMOJIS = [
     "😀", "😁", "😂", "🤣", "😊", "😍", "😘", "😜", "🤔", "😎",
@@ -17,6 +20,10 @@
     "🤔", "🙌", "🥳", "😎", "🤝", "👏", "🙏", "💯",
     "✨", "🎂", "🍕", "🏆", "🌟", "💤", "🤯", "😴"
   ];
+
+  const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+  const FESTIVE_STICKERS = ["🎉", "🥳", "🎊"];
+  const CONFETTI_COLORS = ["#6366f1", "#a855f7", "#f43f5e", "#f59e0b", "#10b981", "#0ea5e9"];
 
   // ---- DOM refs ----
   const nameInput = document.getElementById("name-input");
@@ -45,6 +52,8 @@
   const peerNameEl = document.getElementById("peer-name");
   const peerAvatarImg = document.getElementById("peer-avatar-img");
   const connectionStatus = document.getElementById("connection-status");
+  const typingIndicator = document.getElementById("typing-indicator");
+  const confettiLayer = document.getElementById("confetti-layer");
   const messagesEl = document.getElementById("messages");
   const messageForm = document.getElementById("message-form");
   const messageInput = document.getElementById("message-input");
@@ -67,6 +76,17 @@
   const emojiPanel = document.getElementById("emoji-panel");
   const stickerPanel = document.getElementById("sticker-panel");
 
+  const gifToggleBtn = document.getElementById("gif-toggle-btn");
+  const gifPanel = document.getElementById("gif-panel");
+  const gifKeySetup = document.getElementById("gif-key-setup");
+  const gifKeyInput = document.getElementById("gif-key-input");
+  const gifKeySaveBtn = document.getElementById("gif-key-save-btn");
+  const gifSearchArea = document.getElementById("gif-search-area");
+  const gifSearchInput = document.getElementById("gif-search-input");
+  const gifKeyResetBtn = document.getElementById("gif-key-reset-btn");
+  const gifResults = document.getElementById("gif-results");
+  const gifStatus = document.getElementById("gif-status");
+
   const imageBtn = document.getElementById("image-btn");
   const imageInput = document.getElementById("image-input");
 
@@ -87,6 +107,9 @@
   let editPendingAvatarDataUrl = null;
   let editingMessageId = null;
   let currentActionBar = null;
+  let typingHideTimeout = null;
+  let lastTypingSentAt = 0;
+  let gifSearchDebounceTimer = null;
 
   const messageRegistry = new Map();
 
@@ -287,6 +310,13 @@
       stickerPanel.classList.add("hidden");
     }
     if (
+      !gifPanel.classList.contains("hidden") &&
+      !gifPanel.contains(e.target) &&
+      e.target !== gifToggleBtn
+    ) {
+      gifPanel.classList.add("hidden");
+    }
+    if (
       currentActionBar &&
       !currentActionBar.contains(e.target) &&
       !e.target.classList.contains("kebab-btn")
@@ -420,12 +450,16 @@
     conn.send({ type: "profile", name: myProfile.name, avatar: myProfile.avatar });
   }
 
-  function setOnline(isOnline) {
-    connectionStatus.textContent = isOnline ? "conectado" : "desconectado";
-    connectionStatus.classList.toggle("online", isOnline);
-    connectionStatus.classList.toggle("offline", !isOnline);
-    [messageInput, sendBtn, emojiToggleBtn, stickerToggleBtn, imageBtn, micBtn].forEach((el) => {
-      el.disabled = !isOnline;
+  function setOnline(online) {
+    connectionStatus.textContent = online ? "conectado" : "desconectado";
+    connectionStatus.classList.toggle("online", online);
+    connectionStatus.classList.toggle("offline", !online);
+    if (!online) {
+      clearTimeout(typingHideTimeout);
+      typingIndicator.classList.add("hidden");
+    }
+    [messageInput, sendBtn, emojiToggleBtn, stickerToggleBtn, gifToggleBtn, imageBtn, micBtn].forEach((el) => {
+      el.disabled = !online;
     });
   }
 
@@ -459,6 +493,10 @@
         break;
       case "sticker":
         addStickerBubble(data.id, peerProfile, data.sticker, false, data.ts);
+        if (FESTIVE_STICKERS.includes(data.sticker)) triggerConfetti();
+        break;
+      case "gif":
+        addGifBubble(data.id, peerProfile, data.url, false, data.ts);
         break;
       case "edit":
         applyEdit(data.id, data.text);
@@ -466,11 +504,40 @@
       case "delete":
         markDeleted(data.id);
         break;
+      case "reaction":
+        {
+          const entry = messageRegistry.get(data.id);
+          if (entry) {
+            entry.reactions.peer = data.emoji;
+            renderReactionBadge(entry);
+          }
+        }
+        break;
+      case "typing":
+        showTypingIndicator();
+        break;
       case "media-meta":
         pendingMediaMeta = data;
         break;
     }
   }
+
+  function showTypingIndicator() {
+    typingIndicator.classList.remove("hidden");
+    clearTimeout(typingHideTimeout);
+    typingHideTimeout = setTimeout(() => {
+      typingIndicator.classList.add("hidden");
+    }, 2500);
+  }
+
+  messageInput.addEventListener("input", () => {
+    if (!conn || !conn.open) return;
+    const now = Date.now();
+    if (now - lastTypingSentAt > 1500) {
+      lastTypingSentAt = now;
+      conn.send({ type: "typing" });
+    }
+  });
 
   // ---- Sending / editing text ----
   messageForm.addEventListener("submit", (e) => {
@@ -537,6 +604,7 @@
     entry.row.classList.remove("sticker-row");
     entry.bubbleEl.innerHTML = "";
     entry.bubbleEl.classList.add("deleted-bubble");
+    entry.reactionBadge = null;
     const placeholder = document.createElement("div");
     placeholder.className = "deleted-placeholder";
     placeholder.textContent = "Mensagem apagada";
@@ -558,6 +626,32 @@
     entry.row.remove();
     messageRegistry.delete(id);
     closeActionMenu();
+  }
+
+  // ---- Reactions ----
+  function toggleReaction(id, emoji) {
+    const entry = messageRegistry.get(id);
+    if (!entry || entry.deleted) return;
+    entry.reactions.mine = entry.reactions.mine === emoji ? null : emoji;
+    if (conn && conn.open) conn.send({ type: "reaction", id, emoji: entry.reactions.mine });
+    renderReactionBadge(entry);
+  }
+
+  function renderReactionBadge(entry) {
+    const unique = [...new Set([entry.reactions.mine, entry.reactions.peer].filter(Boolean))];
+    if (unique.length === 0) {
+      if (entry.reactionBadge) {
+        entry.reactionBadge.remove();
+        entry.reactionBadge = null;
+      }
+      return;
+    }
+    if (!entry.reactionBadge) {
+      entry.reactionBadge = document.createElement("div");
+      entry.reactionBadge.className = "reaction-badge";
+      entry.bubbleEl.appendChild(entry.reactionBadge);
+    }
+    entry.reactionBadge.textContent = unique.join("");
   }
 
   // ---- Per-message action menu ----
@@ -592,6 +686,7 @@
     bar.className = "msg-actions " + (isMe ? "me" : "other");
     bar.dataset.forId = id;
 
+    bar.appendChild(mkActionBtn("😀 Reagir", () => openReactionPicker(row, id, isMe)));
     if (isMe && type === "text") {
       bar.appendChild(mkActionBtn("Editar", () => startEditing(id)));
     }
@@ -602,6 +697,23 @@
       })
     );
 
+    row.after(bar);
+    currentActionBar = bar;
+  }
+
+  function openReactionPicker(row, id, isMe) {
+    closeActionMenu();
+    const bar = document.createElement("div");
+    bar.className = "msg-actions reaction-picker " + (isMe ? "me" : "other");
+    bar.dataset.forId = id;
+    REACTIONS.forEach((emoji) => {
+      bar.appendChild(
+        mkActionBtn(emoji, () => {
+          toggleReaction(id, emoji);
+          closeActionMenu();
+        })
+      );
+    });
     row.after(bar);
     currentActionBar = bar;
   }
@@ -628,10 +740,12 @@
 
   emojiToggleBtn.addEventListener("click", () => {
     stickerPanel.classList.add("hidden");
+    gifPanel.classList.add("hidden");
     emojiPanel.classList.toggle("hidden");
   });
   stickerToggleBtn.addEventListener("click", () => {
     emojiPanel.classList.add("hidden");
+    gifPanel.classList.add("hidden");
     stickerPanel.classList.toggle("hidden");
   });
 
@@ -641,9 +755,167 @@
     const ts = Date.now();
     conn.send({ type: "sticker", id, sticker, ts });
     addStickerBubble(id, myProfile, sticker, true, ts);
+    if (FESTIVE_STICKERS.includes(sticker)) triggerConfetti();
   }
 
-  // ---- Images and GIFs ----
+  // ---- Confetti ----
+  function triggerConfetti() {
+    const count = 40;
+    for (let i = 0; i < count; i++) {
+      const piece = document.createElement("div");
+      piece.className = "confetti-piece";
+      piece.style.left = Math.random() * 100 + "vw";
+      piece.style.background = CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)];
+      piece.style.animationDuration = (1.8 + Math.random() * 1.2) + "s";
+      piece.style.animationDelay = (Math.random() * 0.3) + "s";
+      piece.style.animationName = "confetti-fall";
+      confettiLayer.appendChild(piece);
+      piece.addEventListener("animationend", () => piece.remove());
+    }
+  }
+
+  // ---- GIFs (Tenor) ----
+  function getTenorKey() {
+    return localStorage.getItem(TENOR_KEY_STORAGE) || "";
+  }
+
+  function setTenorKey(key) {
+    localStorage.setItem(TENOR_KEY_STORAGE, key);
+  }
+
+  async function tenorFetch(path, params) {
+    const key = getTenorKey();
+    if (!key) throw new Error("no-key");
+    const url = new URL(TENOR_API_BASE + path);
+    url.searchParams.set("key", key);
+    url.searchParams.set("client_key", TENOR_CLIENT_KEY);
+    url.searchParams.set("media_filter", "tinygif,mediumgif,gif");
+    url.searchParams.set("limit", "24");
+    Object.entries(params || {}).forEach(([k, v]) => url.searchParams.set(k, v));
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      const err = new Error((body && body.error && body.error.message) || `Erro ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    return res.json();
+  }
+
+  function showGifError(e) {
+    if (e.status === 400 || e.status === 403) {
+      gifStatus.textContent = "Chave inválida. Verifique e tente de novo.";
+    } else {
+      gifStatus.textContent = "Não foi possível buscar GIFs agora.";
+    }
+    gifStatus.classList.remove("hidden");
+    gifResults.innerHTML = "";
+  }
+
+  function renderGifResults(json) {
+    gifResults.innerHTML = "";
+    const results = json.results || [];
+    if (results.length === 0) {
+      gifStatus.textContent = "Nenhum GIF encontrado.";
+      gifStatus.classList.remove("hidden");
+      return;
+    }
+    gifStatus.classList.add("hidden");
+    results.forEach((item) => {
+      const formats = item.media_formats || {};
+      const preview = formats.tinygif || formats.gif;
+      const full = formats.mediumgif || formats.gif || formats.tinygif;
+      if (!preview || !full) return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "gif-result-item";
+      const img = document.createElement("img");
+      img.src = preview.url;
+      img.alt = item.content_description || "GIF";
+      img.loading = "lazy";
+      btn.appendChild(img);
+      btn.addEventListener("click", () => {
+        sendGif(full.url);
+        gifPanel.classList.add("hidden");
+      });
+      gifResults.appendChild(btn);
+    });
+  }
+
+  async function searchGifs(query) {
+    gifStatus.textContent = "Buscando...";
+    gifStatus.classList.remove("hidden");
+    try {
+      const json = await tenorFetch("/search", { q: query });
+      renderGifResults(json);
+    } catch (e) {
+      showGifError(e);
+    }
+  }
+
+  async function loadTrendingGifs() {
+    gifStatus.textContent = "Carregando...";
+    gifStatus.classList.remove("hidden");
+    try {
+      const json = await tenorFetch("/featured", {});
+      renderGifResults(json);
+    } catch (e) {
+      showGifError(e);
+    }
+  }
+
+  function refreshGifPanel() {
+    const key = getTenorKey();
+    if (!key) {
+      gifKeySetup.classList.remove("hidden");
+      gifSearchArea.classList.add("hidden");
+    } else {
+      gifKeySetup.classList.add("hidden");
+      gifSearchArea.classList.remove("hidden");
+      if (!gifResults.childElementCount) loadTrendingGifs();
+    }
+  }
+
+  gifToggleBtn.addEventListener("click", () => {
+    emojiPanel.classList.add("hidden");
+    stickerPanel.classList.add("hidden");
+    const willShow = gifPanel.classList.contains("hidden");
+    gifPanel.classList.toggle("hidden");
+    if (willShow) refreshGifPanel();
+  });
+
+  gifKeySaveBtn.addEventListener("click", () => {
+    const key = gifKeyInput.value.trim();
+    if (!key) return;
+    setTenorKey(key);
+    gifKeyInput.value = "";
+    refreshGifPanel();
+  });
+
+  gifKeyResetBtn.addEventListener("click", () => {
+    localStorage.removeItem(TENOR_KEY_STORAGE);
+    gifResults.innerHTML = "";
+    refreshGifPanel();
+  });
+
+  gifSearchInput.addEventListener("input", () => {
+    clearTimeout(gifSearchDebounceTimer);
+    const query = gifSearchInput.value.trim();
+    gifSearchDebounceTimer = setTimeout(() => {
+      if (query) searchGifs(query);
+      else loadTrendingGifs();
+    }, 350);
+  });
+
+  function sendGif(url) {
+    if (!conn || !conn.open) return;
+    const id = uid();
+    const ts = Date.now();
+    conn.send({ type: "gif", id, url, ts });
+    addGifBubble(id, myProfile, url, true, ts);
+  }
+
+  // ---- Images and device GIFs ----
   imageBtn.addEventListener("click", () => imageInput.click());
   imageInput.addEventListener("change", async () => {
     const file = imageInput.files[0];
@@ -803,7 +1075,17 @@
     messagesEl.appendChild(row);
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
-    messageRegistry.set(id, { row, bubbleEl, type, isMe, profile, mediaUrl: null, deleted: false });
+    messageRegistry.set(id, {
+      row,
+      bubbleEl,
+      type,
+      isMe,
+      profile,
+      mediaUrl: null,
+      deleted: false,
+      reactions: { mine: null, peer: null },
+      reactionBadge: null
+    });
     return row;
   }
 
@@ -852,6 +1134,19 @@
     bubble.appendChild(img);
     bubble.appendChild(makeTimeEl(ts));
     renderRow(id, "image", profile, isMe, bubble);
+  }
+
+  function addGifBubble(id, profile, url, isMe, ts) {
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    const img = document.createElement("img");
+    img.className = "bubble-gif";
+    img.src = url;
+    img.alt = "GIF";
+    img.addEventListener("click", () => window.open(url, "_blank"));
+    bubble.appendChild(img);
+    bubble.appendChild(makeTimeEl(ts));
+    renderRow(id, "gif", profile, isMe, bubble);
   }
 
   function addAudioBubble(id, profile, url, isMe, ts) {

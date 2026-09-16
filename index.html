@@ -60,6 +60,7 @@
         <div class="chat-header-text">
           <strong id="peer-name">Sala</strong>
           <span id="connection-status" class="connection-status offline">desconectado</span>
+          <span id="typing-indicator" class="typing-indicator hidden">digitando...</span>
         </div>
       </div>
       <div class="chat-header-actions">
@@ -69,6 +70,8 @@
         <button id="leave-btn" type="button" title="Sair da sala">Sair</button>
       </div>
     </header>
+
+    <div id="confetti-layer" class="confetti-layer"></div>
 
     <div id="profile-edit-panel" class="popover-panel hidden">
       <button id="edit-avatar-pick-btn" type="button" class="avatar-btn" title="Trocar foto">
@@ -95,6 +98,26 @@
     <div id="emoji-panel" class="picker-panel hidden"></div>
     <div id="sticker-panel" class="picker-panel hidden"></div>
 
+    <div id="gif-panel" class="picker-panel gif-panel hidden">
+      <div id="gif-key-setup" class="gif-key-setup hidden">
+        <p>Pra buscar GIFs de verdade, pegue uma chave grátis da Tenor (leva 1 minuto, não precisa de cartão):</p>
+        <a href="https://tenor.com/gifapi/documentation#quickstart-apikey" target="_blank" rel="noopener noreferrer">Pegar chave grátis da Tenor →</a>
+        <div class="gif-key-row">
+          <input id="gif-key-input" type="text" placeholder="Cole sua chave aqui" autocomplete="off">
+          <button id="gif-key-save-btn" type="button" class="primary">Salvar</button>
+        </div>
+        <p class="gif-key-note">Fica salva só no seu navegador — nunca é enviada pro GitHub nem pro seu amigo.</p>
+      </div>
+      <div id="gif-search-area" class="gif-search-area hidden">
+        <div class="gif-search-row">
+          <input id="gif-search-input" type="text" placeholder="Buscar GIFs..." autocomplete="off">
+          <button id="gif-key-reset-btn" type="button" title="Trocar chave da Tenor">⚙️</button>
+        </div>
+        <div id="gif-results" class="gif-results"></div>
+        <p id="gif-status" class="gif-status hidden"></p>
+      </div>
+    </div>
+
     <div id="editing-bar" class="editing-bar hidden">
       <span>✏️ Editando mensagem</span>
       <button id="editing-cancel-btn" type="button" title="Cancelar edição">✕</button>
@@ -103,7 +126,8 @@
     <form id="message-form" class="message-form">
       <button id="emoji-toggle-btn" type="button" class="tool-btn" title="Emojis">🙂</button>
       <button id="sticker-toggle-btn" type="button" class="tool-btn" title="Figurinhas">✨</button>
-      <button id="image-btn" type="button" class="tool-btn" title="Enviar foto ou GIF">📎</button>
+      <button id="gif-toggle-btn" type="button" class="tool-btn tool-btn-text" title="GIFs">GIF</button>
+      <button id="image-btn" type="button" class="tool-btn" title="Enviar foto ou GIF do dispositivo">📎</button>
       <input id="image-input" type="file" accept="image/*" class="hidden">
       <button id="mic-btn" type="button" class="tool-btn" title="Gravar áudio">🎤</button>
       <input id="message-input" type="text" placeholder="Digite uma mensagem..." autocomplete="off" disabled>
