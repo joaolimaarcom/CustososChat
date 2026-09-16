@@ -13,6 +13,9 @@
   --online: #16a34a;
   --offline: #9ca3af;
   --danger: #dc2626;
+  --danger-hover: #b91c1c;
+  --shadow-sm: 0 1px 2px rgba(20, 22, 26, 0.06);
+  --shadow-md: 0 8px 24px rgba(20, 22, 26, 0.10);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -31,6 +34,9 @@
     --online: #22c55e;
     --offline: #6b7280;
     --danger: #f87171;
+    --danger-hover: #ef4444;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
   }
 }
 
@@ -64,6 +70,10 @@ body {
   justify-content: center;
   padding: 16px;
   overflow-y: auto;
+  background:
+    radial-gradient(circle at 15% 10%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 55%),
+    radial-gradient(circle at 85% 90%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 55%),
+    var(--bg);
 }
 
 .card {
@@ -73,6 +83,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 28px 24px;
+  box-shadow: var(--shadow-md);
 }
 
 .card h1 {
@@ -139,6 +150,15 @@ input[type="text"]:focus {
   justify-content: center;
   overflow: hidden;
   padding: 0;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.avatar-btn:hover {
+  border-color: var(--primary);
+}
+
+.avatar-btn:active {
+  transform: scale(0.95);
 }
 
 .avatar-btn.small {
@@ -183,6 +203,7 @@ input[type="text"]:focus {
   border-radius: 8px;
   font-size: 0.85rem;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .tab.active {
@@ -211,15 +232,21 @@ button.primary {
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
 }
 
 button.primary:hover {
   background: var(--primary-hover);
 }
 
+button.primary:active {
+  transform: scale(0.98);
+}
+
 button.primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  transform: none;
 }
 
 .room-code-box {
@@ -276,6 +303,8 @@ button.primary:disabled {
   padding: 10px 16px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  z-index: 5;
 }
 
 .chat-header-info {
@@ -382,7 +411,13 @@ button.primary:disabled {
 .bubble-row {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
+  animation: bubble-in 0.18s ease-out;
+}
+
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .bubble-row.me {
@@ -404,6 +439,7 @@ button.primary:disabled {
   font-size: 0.92rem;
   line-height: 1.35;
   word-wrap: break-word;
+  box-shadow: var(--shadow-sm);
 }
 
 .bubble-row.me .bubble {
@@ -423,6 +459,76 @@ button.primary:disabled {
   margin-top: 3px;
   font-size: 0.68rem;
   opacity: 0.7;
+}
+
+.edited-tag {
+  font-size: 0.68rem;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+/* Per-message options ("kebab") button */
+
+.kebab-btn {
+  flex-shrink: 0;
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.kebab-btn:hover {
+  opacity: 1;
+  background: var(--bg);
+}
+
+/* Inline edit / delete action bar for a message */
+
+.msg-actions {
+  display: flex;
+  gap: 6px;
+  margin: -4px 0 0;
+  padding-left: 34px;
+  animation: bubble-in 0.15s ease-out;
+}
+
+.msg-actions.me {
+  justify-content: flex-end;
+  padding-left: 0;
+  padding-right: 34px;
+}
+
+.msg-actions button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.75rem;
+  padding: 5px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+
+.msg-actions button:hover {
+  background: var(--bg);
+}
+
+.bubble.deleted-bubble {
+  opacity: 0.7;
+}
+
+.deleted-placeholder {
+  font-size: 0.85rem;
+  font-style: italic;
+  opacity: 0.75;
 }
 
 .bubble-image {
@@ -533,6 +639,30 @@ button.primary:disabled {
   padding: 4px 8px;
 }
 
+/* Editing bar */
+
+.editing-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+#editing-cancel-btn {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
 .message-form {
   display: flex;
   align-items: center;
@@ -554,10 +684,15 @@ button.primary:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background 0.15s ease, transform 0.1s ease;
 }
 
 .tool-btn:hover {
   background: var(--bg);
+}
+
+.tool-btn:active {
+  transform: scale(0.9);
 }
 
 .tool-btn.recording {
@@ -595,6 +730,15 @@ button.primary:disabled {
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.message-form button[type="submit"]:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.message-form button[type="submit"]:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .message-form button:disabled {

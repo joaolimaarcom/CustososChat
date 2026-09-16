@@ -1,6 +1,7 @@
 (() => {
   const ROOM_PREFIX = "custosochat-";
   const MAX_RECORDING_MS = 120000;
+  const MAX_GIF_BYTES = 6 * 1024 * 1024;
 
   const EMOJIS = [
     "😀", "😁", "😂", "🤣", "😊", "😍", "😘", "😜", "🤔", "😎",
@@ -74,6 +75,9 @@
   const recordingTimerEl = document.getElementById("recording-timer");
   const recordingCancelBtn = document.getElementById("recording-cancel-btn");
 
+  const editingBar = document.getElementById("editing-bar");
+  const editingCancelBtn = document.getElementById("editing-cancel-btn");
+
   let peer = null;
   let conn = null;
   let roomCode = "";
@@ -81,6 +85,10 @@
   let pendingMediaMeta = null;
   let pendingAvatarDataUrl = null;
   let editPendingAvatarDataUrl = null;
+  let editingMessageId = null;
+  let currentActionBar = null;
+
+  const messageRegistry = new Map();
 
   const myProfile = {
     name: localStorage.getItem("custosochat-name") || "",
@@ -96,6 +104,10 @@
     stickerPanel.classList.add("hidden");
   });
   stickerPanel.classList.add("stickers");
+
+  function uid() {
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
 
   // ---- Avatar helpers ----
 
@@ -274,6 +286,13 @@
     ) {
       stickerPanel.classList.add("hidden");
     }
+    if (
+      currentActionBar &&
+      !currentActionBar.contains(e.target) &&
+      !e.target.classList.contains("kebab-btn")
+    ) {
+      closeActionMenu();
+    }
   });
 
   // ---- Tabs ----
@@ -418,10 +437,12 @@
       const blob = new Blob([data], { type: meta.mime });
       const url = URL.createObjectURL(blob);
       if (meta.kind === "image") {
-        addImageBubble(peerProfile, url, false, meta.ts);
+        addImageBubble(meta.id, peerProfile, url, false, meta.ts);
       } else {
-        addAudioBubble(peerProfile, url, false, meta.ts);
+        addAudioBubble(meta.id, peerProfile, url, false, meta.ts);
       }
+      const entry = messageRegistry.get(meta.id);
+      if (entry) entry.mediaUrl = url;
       return;
     }
 
@@ -434,10 +455,16 @@
         peerAvatarImg.src = peerProfile.avatar || generateInitialsAvatar(peerProfile.name);
         break;
       case "message":
-        addTextBubble(peerProfile, data.text, false, data.ts);
+        addTextBubble(data.id, peerProfile, data.text, false, data.ts);
         break;
       case "sticker":
-        addStickerBubble(peerProfile, data.sticker, false, data.ts);
+        addStickerBubble(data.id, peerProfile, data.sticker, false, data.ts);
+        break;
+      case "edit":
+        applyEdit(data.id, data.text);
+        break;
+      case "delete":
+        markDeleted(data.id);
         break;
       case "media-meta":
         pendingMediaMeta = data;
@@ -445,16 +472,139 @@
     }
   }
 
-  // ---- Sending text ----
+  // ---- Sending / editing text ----
   messageForm.addEventListener("submit", (e) => {
     e.preventDefault();
     const text = messageInput.value.trim();
     if (!text || !conn || !conn.open) return;
+
+    if (editingMessageId) {
+      const id = editingMessageId;
+      conn.send({ type: "edit", id, text });
+      applyEdit(id, text);
+      cancelEditing();
+      return;
+    }
+
+    const id = uid();
     const ts = Date.now();
-    conn.send({ type: "message", text, ts });
-    addTextBubble(myProfile, text, true, ts);
+    conn.send({ type: "message", id, text, ts });
+    addTextBubble(id, myProfile, text, true, ts);
     messageInput.value = "";
   });
+
+  function startEditing(id) {
+    const entry = messageRegistry.get(id);
+    if (!entry || entry.type !== "text" || entry.deleted) return;
+    editingMessageId = id;
+    messageInput.value = entry.text;
+    messageInput.focus();
+    editingBar.classList.remove("hidden");
+    closeActionMenu();
+  }
+
+  function cancelEditing() {
+    editingMessageId = null;
+    messageInput.value = "";
+    editingBar.classList.add("hidden");
+  }
+
+  editingCancelBtn.addEventListener("click", cancelEditing);
+
+  function applyEdit(id, newText) {
+    const entry = messageRegistry.get(id);
+    if (!entry || entry.type !== "text" || entry.deleted) return;
+    entry.text = newText;
+    entry.mainSpan.textContent = newText;
+    if (!entry.editedTag) {
+      const tag = document.createElement("span");
+      tag.className = "edited-tag";
+      tag.textContent = " (editado)";
+      entry.textEl.appendChild(tag);
+      entry.editedTag = tag;
+    }
+  }
+
+  // ---- Deleting messages ----
+  function markDeleted(id) {
+    const entry = messageRegistry.get(id);
+    if (!entry || entry.deleted) return;
+    entry.deleted = true;
+    if (entry.mediaUrl) {
+      URL.revokeObjectURL(entry.mediaUrl);
+      entry.mediaUrl = null;
+    }
+    entry.row.classList.remove("sticker-row");
+    entry.bubbleEl.innerHTML = "";
+    entry.bubbleEl.classList.add("deleted-bubble");
+    const placeholder = document.createElement("div");
+    placeholder.className = "deleted-placeholder";
+    placeholder.textContent = "Mensagem apagada";
+    entry.bubbleEl.appendChild(placeholder);
+    const kebab = entry.row.querySelector(".kebab-btn");
+    if (kebab) kebab.remove();
+  }
+
+  function deleteForEveryone(id) {
+    if (conn && conn.open) conn.send({ type: "delete", id });
+    markDeleted(id);
+    closeActionMenu();
+  }
+
+  function deleteForMe(id) {
+    const entry = messageRegistry.get(id);
+    if (!entry) return;
+    if (entry.mediaUrl) URL.revokeObjectURL(entry.mediaUrl);
+    entry.row.remove();
+    messageRegistry.delete(id);
+    closeActionMenu();
+  }
+
+  // ---- Per-message action menu ----
+  function closeActionMenu() {
+    if (currentActionBar) {
+      currentActionBar.remove();
+      currentActionBar = null;
+    }
+  }
+
+  function mkActionBtn(label, onClick) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = label;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onClick();
+    });
+    return btn;
+  }
+
+  function openActionMenu(row, id, type, isMe) {
+    const entry = messageRegistry.get(id);
+    if (!entry || entry.deleted) return;
+    if (currentActionBar && currentActionBar.dataset.forId === id) {
+      closeActionMenu();
+      return;
+    }
+    closeActionMenu();
+
+    const bar = document.createElement("div");
+    bar.className = "msg-actions " + (isMe ? "me" : "other");
+    bar.dataset.forId = id;
+
+    if (isMe && type === "text") {
+      bar.appendChild(mkActionBtn("Editar", () => startEditing(id)));
+    }
+    bar.appendChild(
+      mkActionBtn(isMe ? "Apagar" : "Apagar para mim", () => {
+        if (isMe) deleteForEveryone(id);
+        else deleteForMe(id);
+      })
+    );
+
+    row.after(bar);
+    currentActionBar = bar;
+  }
 
   // ---- Emoji / sticker panels ----
   function buildPickerPanel(panelEl, items, onPick) {
@@ -487,30 +637,48 @@
 
   function sendSticker(sticker) {
     if (!conn || !conn.open) return;
+    const id = uid();
     const ts = Date.now();
-    conn.send({ type: "sticker", sticker, ts });
-    addStickerBubble(myProfile, sticker, true, ts);
+    conn.send({ type: "sticker", id, sticker, ts });
+    addStickerBubble(id, myProfile, sticker, true, ts);
   }
 
-  // ---- Images ----
+  // ---- Images and GIFs ----
   imageBtn.addEventListener("click", () => imageInput.click());
   imageInput.addEventListener("change", async () => {
     const file = imageInput.files[0];
     imageInput.value = "";
     if (!file || !conn || !conn.open) return;
     try {
-      const { buffer, mime } = await resizeImageForChat(file);
-      sendMedia("image", buffer, mime);
+      let buffer;
+      let mime;
+      if (file.type === "image/gif") {
+        if (file.size > MAX_GIF_BYTES) {
+          addSystemMessage("Esse GIF é muito grande (máximo 6 MB).");
+          return;
+        }
+        buffer = await file.arrayBuffer();
+        mime = "image/gif";
+      } else {
+        const resized = await resizeImageForChat(file);
+        buffer = resized.buffer;
+        mime = resized.mime;
+      }
+      const id = uid();
+      const ts = Date.now();
+      sendMedia("image", id, buffer, mime, ts);
       const blob = new Blob([buffer], { type: mime });
-      addImageBubble(myProfile, URL.createObjectURL(blob), true, Date.now());
+      const url = URL.createObjectURL(blob);
+      addImageBubble(id, myProfile, url, true, ts);
+      messageRegistry.get(id).mediaUrl = url;
     } catch (e) {
-      addSystemMessage("Não foi possível enviar a foto.");
+      addSystemMessage("Não foi possível enviar a imagem.");
     }
   });
 
-  function sendMedia(kind, buffer, mime) {
+  function sendMedia(kind, id, buffer, mime, ts) {
     if (!conn || !conn.open) return;
-    conn.send({ type: "media-meta", kind, mime, ts: Date.now() });
+    conn.send({ type: "media-meta", kind, id, mime, ts });
     conn.send(buffer);
   }
 
@@ -590,30 +758,53 @@
       const mime = mediaRecorder.mimeType || "audio/webm";
       const blob = new Blob(recordedChunks, { type: mime });
       const buffer = await blob.arrayBuffer();
-      sendMedia("audio", buffer, mime);
-      addAudioBubble(myProfile, URL.createObjectURL(blob), true, Date.now());
+      const id = uid();
+      const ts = Date.now();
+      sendMedia("audio", id, buffer, mime, ts);
+      const url = URL.createObjectURL(blob);
+      addAudioBubble(id, myProfile, url, true, ts);
+      messageRegistry.get(id).mediaUrl = url;
     }
     recordedChunks = [];
     mediaRecorder = null;
   }
 
   // ---- Rendering ----
-  function renderRow(profile, isMe, bubbleEl, isSticker) {
+  function renderRow(id, type, profile, isMe, bubbleEl) {
     const row = document.createElement("div");
-    row.className = "bubble-row " + (isMe ? "me" : "other") + (isSticker ? " sticker-row" : "");
+    row.className = "bubble-row " + (isMe ? "me" : "other") + (type === "sticker" ? " sticker-row" : "");
+    row.dataset.id = id;
+
     const avatar = document.createElement("img");
     avatar.className = "row-avatar";
     avatar.alt = "";
     avatar.src = (profile && profile.avatar) || generateInitialsAvatar((profile && profile.name) || "?");
+
+    const kebab = document.createElement("button");
+    kebab.type = "button";
+    kebab.className = "kebab-btn";
+    kebab.textContent = "⋯";
+    kebab.title = "Opções";
+    kebab.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openActionMenu(row, id, type, isMe);
+    });
+
     if (isMe) {
+      row.appendChild(kebab);
       row.appendChild(bubbleEl);
       row.appendChild(avatar);
     } else {
       row.appendChild(avatar);
       row.appendChild(bubbleEl);
+      row.appendChild(kebab);
     }
+
     messagesEl.appendChild(row);
     messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    messageRegistry.set(id, { row, bubbleEl, type, isMe, profile, mediaUrl: null, deleted: false });
+    return row;
   }
 
   function makeTimeEl(ts) {
@@ -623,40 +814,47 @@
     return time;
   }
 
-  function addTextBubble(profile, text, isMe, ts) {
+  function addTextBubble(id, profile, text, isMe, ts) {
     const bubble = document.createElement("div");
     bubble.className = "bubble";
     const textEl = document.createElement("div");
-    textEl.textContent = text;
+    textEl.className = "bubble-text";
+    const mainSpan = document.createElement("span");
+    mainSpan.textContent = text;
+    textEl.appendChild(mainSpan);
     bubble.appendChild(textEl);
     bubble.appendChild(makeTimeEl(ts));
-    renderRow(profile, isMe, bubble, false);
+    renderRow(id, "text", profile, isMe, bubble);
+    const entry = messageRegistry.get(id);
+    entry.text = text;
+    entry.textEl = textEl;
+    entry.mainSpan = mainSpan;
   }
 
-  function addStickerBubble(profile, sticker, isMe, ts) {
+  function addStickerBubble(id, profile, sticker, isMe, ts) {
     const bubble = document.createElement("div");
     bubble.className = "bubble";
     const glyph = document.createElement("span");
     glyph.className = "sticker-glyph";
     glyph.textContent = sticker;
     bubble.appendChild(glyph);
-    renderRow(profile, isMe, bubble, true);
+    renderRow(id, "sticker", profile, isMe, bubble);
   }
 
-  function addImageBubble(profile, url, isMe, ts) {
+  function addImageBubble(id, profile, url, isMe, ts) {
     const bubble = document.createElement("div");
     bubble.className = "bubble";
     const img = document.createElement("img");
     img.className = "bubble-image";
     img.src = url;
-    img.alt = "Foto enviada";
+    img.alt = "Imagem enviada";
     img.addEventListener("click", () => window.open(url, "_blank"));
     bubble.appendChild(img);
     bubble.appendChild(makeTimeEl(ts));
-    renderRow(profile, isMe, bubble, false);
+    renderRow(id, "image", profile, isMe, bubble);
   }
 
-  function addAudioBubble(profile, url, isMe, ts) {
+  function addAudioBubble(id, profile, url, isMe, ts) {
     const bubble = document.createElement("div");
     bubble.className = "bubble bubble-audio";
     const audio = document.createElement("audio");
@@ -664,7 +862,7 @@
     audio.src = url;
     bubble.appendChild(audio);
     bubble.appendChild(makeTimeEl(ts));
-    renderRow(profile, isMe, bubble, false);
+    renderRow(id, "audio", profile, isMe, bubble);
   }
 
   function addSystemMessage(text) {
