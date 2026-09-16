@@ -25,6 +25,7 @@
   const HEARTS_KEYWORDS = ["te amo", "amo voce", "amo vc"];
   const STREAK_STORAGE = "custosochat-streak";
   const NOTIF_STORAGE = "custosochat-notif";
+  const DRAW_COLORS = ["#1c1e21", "#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#a855f7", "#ffffff"];
 
   // ---- DOM refs ----
   const nameInput = document.getElementById("name-input");
@@ -87,6 +88,14 @@
   const gameStatus = document.getElementById("game-status");
   const gameBoard = document.getElementById("game-board");
 
+  const drawToggleBtn = document.getElementById("draw-toggle-btn");
+  const drawModal = document.getElementById("draw-modal");
+  const drawCloseBtn = document.getElementById("draw-close-btn");
+  const drawCanvas = document.getElementById("draw-canvas");
+  const drawColorsEl = document.getElementById("draw-colors");
+  const drawSizeButtons = Array.from(document.querySelectorAll(".draw-size-btn"));
+  const drawClearBtn = document.getElementById("draw-clear-btn");
+
   const imageBtn = document.getElementById("image-btn");
   const imageInput = document.getElementById("image-input");
 
@@ -104,6 +113,10 @@
   let amHost = false;
   let peerProfile = null;
   let game = null;
+  let drawColor = DRAW_COLORS[0];
+  let drawSize = 3;
+  let myDraw = { active: false, x: 0, y: 0 };
+  let peerDraw = { active: false, x: 0, y: 0, color: drawColor, size: drawSize };
   let pendingMediaMeta = null;
   let pendingAvatarDataUrl = null;
   let editPendingAvatarDataUrl = null;
@@ -472,11 +485,12 @@
       clearTimeout(typingHideTimeout);
       typingIndicator.classList.add("hidden");
     }
-    [messageInput, sendBtn, emojiToggleBtn, stickerToggleBtn, gameToggleBtn, imageBtn, micBtn].forEach((el) => {
+    [messageInput, sendBtn, emojiToggleBtn, stickerToggleBtn, gameToggleBtn, drawToggleBtn, imageBtn, micBtn].forEach((el) => {
       el.disabled = !online;
     });
     if (!online) {
       gameModal.classList.add("hidden");
+      drawModal.classList.add("hidden");
     }
   }
 
@@ -543,6 +557,24 @@
         break;
       case "game-move":
         playMove(data.index, false);
+        break;
+      case "draw-start":
+        drawModal.classList.remove("hidden");
+        peerDraw = { active: true, x: data.x, y: data.y, color: data.color, size: data.size };
+        strokeSegment(data.x, data.y, data.x, data.y, data.color, data.size);
+        break;
+      case "draw-move":
+        if (peerDraw.active) {
+          strokeSegment(peerDraw.x, peerDraw.y, data.x, data.y, peerDraw.color, peerDraw.size);
+          peerDraw.x = data.x;
+          peerDraw.y = data.y;
+        }
+        break;
+      case "draw-end":
+        peerDraw.active = false;
+        break;
+      case "draw-clear":
+        drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
         break;
     }
   }
@@ -973,6 +1005,93 @@
   gameToggleBtn.addEventListener("click", () => startGame(true));
   gameRestartBtn.addEventListener("click", () => startGame(true));
   gameCloseBtn.addEventListener("click", () => gameModal.classList.add("hidden"));
+
+  // ---- Shared drawing board ----
+  const drawCtx = drawCanvas.getContext("2d");
+  drawCtx.lineCap = "round";
+  drawCtx.lineJoin = "round";
+
+  DRAW_COLORS.forEach((color) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "color-swatch" + (color === "#ffffff" ? " white-swatch" : "");
+    btn.style.background = color;
+    btn.title = color === "#ffffff" ? "Borracha" : "Cor";
+    btn.addEventListener("click", () => {
+      drawColor = color;
+      updateColorSelection();
+    });
+    drawColorsEl.appendChild(btn);
+  });
+
+  function updateColorSelection() {
+    Array.from(drawColorsEl.children).forEach((btn, i) => {
+      btn.classList.toggle("selected", DRAW_COLORS[i] === drawColor);
+    });
+  }
+  updateColorSelection();
+
+  drawSizeButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      drawSize = Number(btn.dataset.size);
+      drawSizeButtons.forEach((b) => b.classList.toggle("active", b === btn));
+    });
+  });
+
+  function canvasPointFromEvent(e) {
+    const rect = drawCanvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top) / rect.height
+    };
+  }
+
+  function strokeSegment(fromX, fromY, toX, toY, color, size) {
+    drawCtx.strokeStyle = color;
+    drawCtx.lineWidth = size;
+    drawCtx.beginPath();
+    drawCtx.moveTo(fromX * drawCanvas.width, fromY * drawCanvas.height);
+    drawCtx.lineTo(toX * drawCanvas.width, toY * drawCanvas.height);
+    drawCtx.stroke();
+  }
+
+  function sendDraw(msg) {
+    if (conn && conn.open) conn.send(msg);
+  }
+
+  drawCanvas.addEventListener("pointerdown", (e) => {
+    drawCanvas.setPointerCapture(e.pointerId);
+    const p = canvasPointFromEvent(e);
+    myDraw = { active: true, x: p.x, y: p.y };
+    strokeSegment(p.x, p.y, p.x, p.y, drawColor, drawSize);
+    sendDraw({ type: "draw-start", x: p.x, y: p.y, color: drawColor, size: drawSize });
+  });
+
+  drawCanvas.addEventListener("pointermove", (e) => {
+    if (!myDraw.active) return;
+    const p = canvasPointFromEvent(e);
+    strokeSegment(myDraw.x, myDraw.y, p.x, p.y, drawColor, drawSize);
+    myDraw.x = p.x;
+    myDraw.y = p.y;
+    sendDraw({ type: "draw-move", x: p.x, y: p.y });
+  });
+
+  function endMyStroke() {
+    if (!myDraw.active) return;
+    myDraw.active = false;
+    sendDraw({ type: "draw-end" });
+  }
+  drawCanvas.addEventListener("pointerup", endMyStroke);
+  drawCanvas.addEventListener("pointerleave", endMyStroke);
+  drawCanvas.addEventListener("pointercancel", endMyStroke);
+
+  drawClearBtn.addEventListener("click", () => {
+    drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+    sendDraw({ type: "draw-clear" });
+  });
+
+  drawToggleBtn.addEventListener("click", () => drawModal.classList.remove("hidden"));
+  drawCloseBtn.addEventListener("click", () => drawModal.classList.add("hidden"));
 
   // ---- Images (photos and GIFs picked from the device) ----
   imageBtn.addEventListener("click", () => imageInput.click());

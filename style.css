@@ -499,6 +499,106 @@ button.primary:disabled {
   padding: 9px 20px;
 }
 
+/* Shared drawing board */
+
+.draw-modal-box {
+  max-width: 340px;
+}
+
+#draw-canvas {
+  width: 100%;
+  max-width: 300px;
+  aspect-ratio: 1 / 1;
+  height: auto;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.draw-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.draw-colors {
+  display: flex;
+  gap: 6px;
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  padding: 0;
+}
+
+.color-swatch.white-swatch {
+  border-color: var(--border);
+}
+
+.color-swatch.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.draw-sizes {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.draw-size-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.draw-size-btn span {
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+.draw-size-btn[data-size="7"] span {
+  width: 9px;
+  height: 9px;
+}
+
+.draw-size-btn[data-size="14"] span {
+  width: 13px;
+  height: 13px;
+}
+
+.draw-size-btn.active {
+  border-color: var(--primary);
+  background: var(--surface);
+}
+
+#draw-clear-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 6px 10px;
+}
+
 #leave-btn {
   border: 1px solid var(--border);
   background: transparent;

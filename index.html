@@ -87,6 +87,25 @@
       </div>
     </div>
 
+    <div id="draw-modal" class="modal-overlay hidden">
+      <div class="modal-box draw-modal-box">
+        <div class="modal-header">
+          <strong>Desenhar junto</strong>
+          <button id="draw-close-btn" type="button" title="Fechar">✕</button>
+        </div>
+        <canvas id="draw-canvas" width="300" height="300"></canvas>
+        <div class="draw-toolbar">
+          <div id="draw-colors" class="draw-colors"></div>
+          <div class="draw-sizes">
+            <button type="button" class="draw-size-btn active" data-size="3" title="Fino"><span></span></button>
+            <button type="button" class="draw-size-btn" data-size="7" title="Médio"><span></span></button>
+            <button type="button" class="draw-size-btn" data-size="14" title="Grosso"><span></span></button>
+          </div>
+          <button id="draw-clear-btn" type="button" title="Limpar tudo">🗑️</button>
+        </div>
+      </div>
+    </div>
+
     <div id="profile-edit-panel" class="popover-panel hidden">
       <button id="edit-avatar-pick-btn" type="button" class="avatar-btn" title="Trocar foto">
         <img id="edit-avatar-preview-img" class="avatar-img hidden" alt="Prévia da nova foto">
@@ -121,6 +140,7 @@
       <button id="emoji-toggle-btn" type="button" class="tool-btn" title="Emojis">🙂</button>
       <button id="sticker-toggle-btn" type="button" class="tool-btn" title="Figurinhas">✨</button>
       <button id="game-toggle-btn" type="button" class="tool-btn" title="Jogo da velha">🎮</button>
+      <button id="draw-toggle-btn" type="button" class="tool-btn" title="Desenhar junto">🎨</button>
       <button id="image-btn" type="button" class="tool-btn" title="Enviar foto ou GIF">📎</button>
       <input id="image-input" type="file" accept="image/*" class="hidden">
       <button id="mic-btn" type="button" class="tool-btn" title="Gravar áudio">🎤</button>
