@@ -20,20 +20,9 @@ só como "intermediária" para os dois se encontrarem). Isso significa que:
    em **Entrar**.
 6. Prontinho, os dois já estão conectados e podem conversar.
 
-Dá pra mandar texto, emoji, figurinha, foto, áudio e GIF; editar e apagar suas próprias
-mensagens; reagir com emoji em qualquer mensagem; e ver quando o outro está digitando.
-
-## Buscar GIFs (opcional)
-
-O botão **GIF** busca GIFs de verdade usando a [API da Tenor](https://tenor.com/gifapi),
-que é gratuita. Da primeira vez que você abrir o painel de GIFs, vai pedir uma chave:
-
-1. Clique no link "Pegar chave grátis da Tenor" (leva 1 minuto, não pede cartão).
-2. Cole a chave no campo e clique em Salvar.
-
-Essa chave fica salva só no seu navegador (localStorage) — nunca é enviada pro GitHub nem
-pro seu amigo, e cada pessoa precisa pegar a sua própria. Se não quiser usar isso, é só não
-configurar: o resto do chat funciona normalmente sem a chave.
+Dá pra mandar texto, emoji, figurinha, foto (inclusive GIFs do seu dispositivo, que mantêm
+a animação), e áudio; editar e apagar suas próprias mensagens; reagir com emoji em qualquer
+mensagem; e ver quando o outro está digitando.
 
 ## Como publicar no GitHub Pages
 
