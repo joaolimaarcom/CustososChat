@@ -2,6 +2,25 @@
   const ROOM_PREFIX = "custosochat-";
   const MAX_RECORDING_MS = 120000;
   const MAX_GIF_BYTES = 6 * 1024 * 1024;
+  const JOIN_TIMEOUT_MS = 20000;
+
+  // STUN alone only works when both people's routers cooperate for a direct
+  // connection. Across two unrelated networks that often fails silently (the
+  // connection just hangs), so we also offer a free public TURN relay
+  // (Open Relay Project, no signup — its credentials are meant to be public)
+  // as a fallback path.
+  const ICE_CONFIG = {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" },
+      { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" },
+      {
+        urls: "turn:openrelay.metered.ca:443?transport=tcp",
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      }
+    ]
+  };
 
   const EMOJIS = [
     "😀", "😁", "😂", "🤣", "😊", "😍", "😘", "😜", "🤔", "😎",
@@ -382,7 +401,7 @@
   function startAsHost(attempt = 0) {
     const code = randomCode();
     const peerId = ROOM_PREFIX + code;
-    const p = new Peer(peerId, { debug: 0 });
+    const p = new Peer(peerId, { debug: 0, config: ICE_CONFIG });
 
     p.on("open", () => {
       peer = p;
@@ -431,13 +450,25 @@
     joinBtn.disabled = true;
     joinStatus.textContent = "Conectando...";
 
-    const p = new Peer(undefined, { debug: 0 });
+    const p = new Peer(undefined, { debug: 0, config: ICE_CONFIG });
 
     p.on("open", () => {
       peer = p;
       conn = p.connect(ROOM_PREFIX + code, { reliable: true });
       wireConnectionEvents();
-      conn.on("open", () => setupConnection(code));
+
+      const timeoutId = setTimeout(() => {
+        if (chatScreen.classList.contains("hidden")) {
+          joinStatus.textContent = "Não foi possível conectar. Verifique a internet dos dois e tente de novo.";
+          joinBtn.disabled = false;
+          conn.close();
+        }
+      }, JOIN_TIMEOUT_MS);
+
+      conn.on("open", () => {
+        clearTimeout(timeoutId);
+        setupConnection(code);
+      });
     });
 
     p.on("error", () => {

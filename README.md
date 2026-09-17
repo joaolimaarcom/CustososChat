@@ -24,6 +24,16 @@ Dá pra mandar texto, emoji, figurinha, foto (inclusive GIFs do seu dispositivo,
 a animação), e áudio; editar e apagar suas próprias mensagens; reagir com emoji em qualquer
 mensagem; e ver quando o outro está digitando.
 
+## Se a conexão travar em "Conectando..."
+
+Isso acontece quando o roteador de uma das duas pessoas bloqueia a conexão direta
+(comum entre redes diferentes — costuma funcionar liso testando com duas abas no mesmo
+computador, mas falhar entre cidades/redes diferentes). O app já tenta usar um
+retransmissor gratuito (TURN) como plano B nesse caso; se mesmo assim travar por mais de
+20 segundos, ele mostra um erro em vez de ficar carregando pra sempre — é só clicar em
+Entrar de novo. Se continuar falhando, pode ser a rede de uma das duas pessoas bloqueando
+WebRTC (comum em wi-fi de empresa/faculdade); tentar pelo 4G costuma resolver.
+
 ## Como publicar no GitHub Pages
 
 1. No repositório, vá em **Settings → Pages**.
